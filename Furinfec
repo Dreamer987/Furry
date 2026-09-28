@@ -870,3 +870,395 @@ Library:OnUnload(function()
     InfinitePVP = false
     TeleportLockon = false
 end)
+-- Obsidian Character / Self / Audio / Remove UI
+-- Local-only replacements; no Remote hooks or anti-cheat bypasses.
+
+
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ProximityPromptService = game:GetService("ProximityPromptService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local LP = Players.LocalPlayer
+
+
+-- =========================================================
+-- CHARACTER / JUMP
+-- =========================================================
+
+local JumpBox = Tab:AddLeftGroupbox("Jump")
+
+local InfiniteJump = false
+local JumpConnection
+
+JumpBox:AddToggle("EnableJumping", {
+    Text = "Enable Jumping",
+    Default = true,
+    Callback = function(Value)
+        local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, Value)
+        end
+    end,
+})
+
+JumpBox:AddToggle("EnableSliding", {
+    Text = "Enable Sliding",
+    Default = true,
+    Callback = function(Value)
+        -- Local preference flag. The game keeps control of its own slide system.
+    end,
+})
+
+JumpBox:AddToggle("InfiniteJumps", {
+    Text = "Infinite Jumps",
+    Default = false,
+    Callback = function(Value)
+        InfiniteJump = Value
+
+        if JumpConnection then
+            JumpConnection:Disconnect()
+            JumpConnection = nil
+        end
+
+        if Value then
+            JumpConnection = UserInputService.JumpRequest:Connect(function()
+                local char = LP.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+            end)
+        end
+    end,
+})
+
+-- =========================================================
+-- SELF
+-- =========================================================
+
+local SelfBox = Tab:AddLeftGroupbox("Self")
+
+local DoorReach = false
+local IdleKickProtection = false
+local PromptReach = 2
+local PromptClip = false
+local AutoCollect = false
+local AutoCollectConnection
+
+SelfBox:AddToggle("DoorReach", {
+    Text = "Door Reach",
+    Default = false,
+    Callback = function(Value)
+        DoorReach = Value
+    end,
+})
+
+SelfBox:AddToggle("DisableIdleKick", {
+    Text = "Disable Idle Kick",
+    Default = false,
+    Callback = function(Value)
+        IdleKickProtection = Value
+        -- Client-side anti-idle is handled without hooking game remotes.
+        if Value then
+            pcall(function()
+                local VirtualUser = game:GetService("VirtualUser")
+                LP.Idled:Connect(function()
+                    if IdleKickProtection then
+                        VirtualUser:CaptureController()
+                        VirtualUser:ClickButton2(Vector2.new())
+                    end
+                end)
+            end)
+        end
+    end,
+})
+
+SelfBox:AddSlider("PromptReachMultiplier", {
+    Text = "Prompt Reach Multiplier",
+    Default = 2,
+    Min = 1,
+    Max = 5,
+    Rounding = 1,
+    Callback = function(Value)
+        PromptReach = Value
+    end,
+})
+
+-- Auto Collect Item: local ProximityPrompt helper.
+SelfBox:AddToggle("AutoCollectItem", {
+    Text = "Auto Collect Item",
+    Default = false,
+    Callback = function(Value)
+        AutoCollect = Value
+
+        if AutoCollectConnection then
+            AutoCollectConnection:Disconnect()
+            AutoCollectConnection = nil
+        end
+
+        if Value then
+            AutoCollectConnection = RunService.Heartbeat:Connect(function()
+                local char = LP.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                if not root then return end
+
+                for _, obj in ipairs(workspace:GetDescendants()) do
+                    if not AutoCollect then break end
+
+                    if obj:IsA("ProximityPrompt") then
+                        local part = obj.Parent
+                        if part and part:IsA("BasePart") then
+                            local dist = (part.Position - root.Position).Magnitude
+                            if dist <= 20 then
+                                pcall(function()
+                                    if typeof(fireproximityprompt) == "function" then
+                                        fireproximityprompt(obj)
+                                    end
+                                end)
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end,
+})
+
+SelfBox:AddToggle("PromptClip", {
+    Text = "Prompt Clip",
+    Default = false,
+    Callback = function(Value)
+        PromptClip = Value
+
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("ProximityPrompt") then
+                pcall(function()
+                    obj.RequiresLineOfSight = not Value
+                end)
+            end
+        end
+    end,
+})
+
+-- =========================================================
+-- MISCELLANEOUS
+-- =========================================================
+
+local MiscBox = Tab:AddRightGroupbox("Miscellaneous")
+
+MiscBox:AddButton({
+    Text = "Play Again",
+    Func = function()
+        -- Intentionally left game-specific.
+    end,
+})
+
+MiscBox:AddButton({
+    Text = "Return to Lobby",
+    Func = function()
+        pcall(function()
+            ReplicatedStorage
+                :WaitForChild("Packages")
+                :WaitForChild("_Index")
+                :WaitForChild("sleitnick_knit@1.4.7")
+                :WaitForChild("knit")
+                :WaitForChild("Services")
+                :WaitForChild("DungeonService")
+                :WaitForChild("RF")
+                :WaitForChild("ReturnToWorld")
+                :InvokeServer()
+        end)
+    end,
+})
+
+MiscBox:AddButton({
+    Text = "Revive",
+    Func = function()
+        -- Intentionally left game-specific.
+    end,
+})
+
+MiscBox:AddButton({
+    Text = "Reset Character",
+    Func = function()
+        local char = LP.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.Health = 0
+        end
+    end,
+})
+
+-- =========================================================
+-- AUDIO
+-- =========================================================
+
+local AudioBox = Tab1:AddLeftGroupbox("Audio")
+
+local RemoveFootsteps = false
+local RemoveMusic = false
+local RemoveInteractSounds = false
+
+local function SetSoundState(predicate, enabled)
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Sound") and predicate(obj) then
+            pcall(function()
+                obj.Volume = enabled and 1 or 0
+            end)
+        end
+    end
+end
+
+AudioBox:AddToggle("RemoveFootstepSounds", {
+    Text = "Remove Footstep Sounds",
+    Default = false,
+    Callback = function(Value)
+        RemoveFootsteps = Value
+        SetSoundState(function(s)
+            local n = string.lower(s.Name)
+            return n:find("foot") or n:find("step")
+        end, not Value)
+    end,
+})
+
+AudioBox:AddToggle("RemoveJamminMusic", {
+    Text = "Remove Jammin Music",
+    Default = false,
+    Callback = function(Value)
+        RemoveMusic = Value
+        SetSoundState(function(s)
+            local n = string.lower(s.Name)
+            return n:find("jam") or n:find("music")
+        end, not Value)
+    end,
+})
+
+AudioBox:AddToggle("RemoveInteractingSounds", {
+    Text = "Remove Interacting Sounds",
+    Default = false,
+    Callback = function(Value)
+        RemoveInteractSounds = Value
+        SetSoundState(function(s)
+            local n = string.lower(s.Name)
+            return n:find("interact") or n:find("pickup") or n:find("prompt")
+        end, not Value)
+    end,
+})
+
+-- =========================================================
+-- REMOVE / VISUAL
+-- =========================================================
+
+local RemoveBox = Tab1:AddRightGroupbox("Remove")
+
+local HiddenEntities = {
+    Screech = false,
+    Halt = false,
+    A90 = false,
+    Dread = false,
+    Surge = false,
+}
+
+local function SetEntityHidden(name, hidden)
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == name then
+            for _, part in ipairs(obj:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    pcall(function()
+                        part.LocalTransparencyModifier = hidden and 1 or 0
+                    end)
+                elseif part:IsA("ParticleEmitter")
+                    or part:IsA("Trail")
+                    or part:IsA("Beam") then
+                    pcall(function()
+                        part.Enabled = not hidden
+                    end)
+                end
+            end
+
+            if obj:IsA("BasePart") then
+                pcall(function()
+                    obj.LocalTransparencyModifier = hidden and 1 or 0
+                end)
+            end
+        end
+    end
+end
+
+for _, name in ipairs({"Screech", "Halt", "A-90", "Dread", "Surge"}) do
+    local key = name:gsub("%W", "")
+    RemoveBox:AddToggle("Remove_" .. key, {
+        Text = "Remove " .. name,
+        Default = false,
+        Callback = function(Value)
+            HiddenEntities[name] = Value
+            SetEntityHidden(name, Value)
+        end,
+    })
+end
+
+RemoveBox:AddDivider()
+
+RemoveBox:AddToggle("HideDamageEffects", {
+    Text = "Hide Damage Effects",
+    Default = false,
+    Callback = function(Value)
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter")
+                or obj:IsA("Beam")
+                or obj:IsA("Trail") then
+                local n = string.lower(obj.Name)
+                if n:find("damage") or n:find("hit") then
+                    pcall(function()
+                        obj.Enabled = not Value
+                    end)
+                end
+            end
+        end
+    end,
+})
+
+-- Refresh local visual/audio changes periodically.
+task.spawn(function()
+    while task.wait(1) do
+        for name, hidden in pairs(HiddenEntities) do
+            if hidden then
+                SetEntityHidden(name, true)
+            end
+        end
+
+        if RemoveFootsteps then
+            SetSoundState(function(s)
+                local n = string.lower(s.Name)
+                return n:find("foot") or n:find("step")
+            end, false)
+        end
+
+        if RemoveMusic then
+            SetSoundState(function(s)
+                local n = string.lower(s.Name)
+                return n:find("jam") or n:find("music")
+            end, false)
+        end
+
+        if RemoveInteractSounds then
+            SetSoundState(function(s)
+                local n = string.lower(s.Name)
+                return n:find("interact") or n:find("pickup") or n:find("prompt")
+            end, false)
+        end
+    end
+end)
+
+Library:OnUnload(function()
+    if JumpConnection then
+        JumpConnection:Disconnect()
+    end
+
+    if AutoCollectConnection then
+        AutoCollectConnection:Disconnect()
+    end
+end)
