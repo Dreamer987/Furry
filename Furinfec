@@ -1262,3 +1262,1082 @@ Library:OnUnload(function()
         AutoCollectConnection:Disconnect()
     end
 end)
+--// =========================================================
+--// TAB 2 - VISUALS / ESP
+--// Paste after Library + Window have already been created
+--// =========================================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+local Options = Library.Options
+local Toggles = Library.Toggles
+
+--==========================================================
+-- SETTINGS
+--==========================================================
+
+local NOTIFY_SOUND_ID = "rbxassetid://6026984224"
+
+local HEALTH_DAMAGE_PERCENT = 0.10
+local HEALTH_DAMAGE_WINDOW = 0.45
+local ENERGY_PERCENT = 0.10
+
+local ESP_UPDATE_RATE = 0.20
+
+local ESPSettings = {
+    Rainbow = false,
+    ShowDistance = true,
+
+    FillTransparency = 0.75,
+    OutlineTransparency = 0,
+    TextTransparency = 0,
+    TextOutlineTransparency = 0,
+
+    FadeTime = 0.25,
+    RenderLimit = 240,
+    TextSize = 20,
+    Font = Enum.Font.Highway,
+
+    MobColor = Color3.fromRGB(255, 0, 0),
+    PlayerColor = Color3.fromRGB(255, 255, 255),
+    ItemColor = Color3.fromRGB(170, 0, 255),
+    OrbColor = Color3.fromRGB(255, 255, 0),
+    QuestColor = Color3.fromRGB(0, 255, 0),
+}
+
+--==========================================================
+-- TAB 2
+--==========================================================
+
+local Tab2 = Window:AddTab("Visuals", "eye")
+
+--==========================================================
+-- HELPERS
+--==========================================================
+
+local function Notify(title, text)
+    Library:Notify({
+        Title = title,
+        Description = text,
+        Time = 4,
+        SoundId = NOTIFY_SOUND_ID,
+        Volume = 0.7,
+    })
+end
+
+local function GetRoot(instance)
+    if not instance then
+        return nil
+    end
+
+    if instance:IsA("BasePart") then
+        return instance
+    end
+
+    if instance:IsA("Model") then
+        local root =
+            instance:FindFirstChild("HumanoidRootPart")
+            or instance.PrimaryPart
+
+        if root and root:IsA("BasePart") then
+            return root
+        end
+
+        for _, v in ipairs(instance:GetDescendants()) do
+            if v:IsA("BasePart") then
+                return v
+            end
+        end
+    end
+
+    return nil
+end
+
+local function GetDistance(instance)
+    local root = GetRoot(instance)
+    local char = LocalPlayer.Character
+    local myRoot = char and GetRoot(char)
+
+    if root and myRoot then
+        return (root.Position - myRoot.Position).Magnitude
+    end
+
+    return math.huge
+end
+
+local function GetRainbowColor()
+    return Color3.fromHSV((tick() % 5) / 5, 1, 1)
+end
+
+--==========================================================
+-- RIGHT BOX: ENTITIES
+--==========================================================
+
+local EntitiesBox = Tab2:AddRightGroupbox("Entities", "radar")
+
+-- MOBS DROPDOWN
+local WorldMobs = Workspace:FindFirstChild("World Mobs")
+
+local function GetMobFolders()
+    local result = {}
+
+    if WorldMobs then
+        for _, child in ipairs(WorldMobs:GetChildren()) do
+            table.insert(result, child.Name)
+        end
+    end
+
+    table.sort(result)
+    return result
+end
+
+local MobFolderNames = GetMobFolders()
+
+local MobDropdown = EntitiesBox:AddDropdown("MobEntityList", {
+    Values = MobFolderNames,
+    Default = MobFolderNames,
+    Multi = true,
+    Searchable = true,
+    MaxVisibleDropdownItems = 8,
+    Text = "Mobs",
+})
+
+-- ITEM LIST
+local function GetItemNames()
+    local result = {}
+
+    local PickItem = Workspace:FindFirstChild("PickItem")
+
+    if PickItem then
+        for _, child in ipairs(PickItem:GetChildren()) do
+            table.insert(result, child.Name)
+        end
+    end
+
+    table.sort(result)
+
+    if #result == 0 then
+        table.insert(result, "No Items")
+    end
+
+    return result
+end
+
+local ItemDropdown = EntitiesBox:AddDropdown("ItemList", {
+    Values = GetItemNames(),
+    Default = 1,
+    Multi = false,
+    Searchable = true,
+    MaxVisibleDropdownItems = 8,
+    Text = "Item List",
+})
+
+-- EQUIP TOOL SLOT
+local SelectedSlot = 1
+
+EntitiesBox:AddDropdown("EquipToolSlot", {
+    Values = {
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+    },
+    Default = "1",
+    Multi = false,
+    Text = "Equiptools Slot",
+
+    Callback = function(Value)
+        SelectedSlot = tonumber(Value) or 1
+    end,
+})
+
+local EquipRemote
+
+pcall(function()
+    EquipRemote =
+        game:GetService("ReplicatedStorage")
+        :WaitForChild("Packages")
+        :WaitForChild("_Index")
+        :WaitForChild("sleitnick_knit@1.4.7")
+        :WaitForChild("knit")
+        :WaitForChild("Services")
+        :WaitForChild("ToolService")
+        :WaitForChild("RE")
+        :WaitForChild("UpdatePlayerToolbarSelection")
+end)
+
+EntitiesBox:AddToggle("EquipTools", {
+    Text = "Equiptools",
+    Default = false,
+
+    Callback = function(Value)
+        if not Value or not EquipRemote then
+            return
+        end
+
+        task.spawn(function()
+            while Toggles.EquipTools.Value do
+                pcall(function()
+                    EquipRemote:FireServer(SelectedSlot)
+                end)
+
+                task.wait(0.10)
+            end
+        end)
+    end,
+})
+
+--==========================================================
+-- NOTIFICATIONS
+--==========================================================
+
+EntitiesBox:AddDivider()
+
+local NotifyCrit = EntitiesBox:AddToggle("NotifyCritDamage", {
+    Text = "Notify Crit Dame",
+    Default = false,
+})
+
+local NotifyEnergy = EntitiesBox:AddToggle("NotifyEnergy", {
+    Text = "Notify Energy",
+    Default = false,
+})
+
+local NotifyHaste = EntitiesBox:AddToggle("NotifyHasteTime", {
+    Text = "Notify Haste Time",
+    Default = false,
+})
+
+--==========================================================
+-- MOB SPAWN NOTIFIER
+--==========================================================
+
+local MobConnections = {}
+
+local function IsMobFolderSelected(folderName)
+    local value = MobDropdown.Value
+
+    if type(value) == "table" then
+        return value[folderName] == true
+    end
+
+    return false
+end
+
+local function NotifyMobSpawn(instance)
+    if not instance or not instance.Parent then
+        return
+    end
+
+    Notify(
+        "Mob Spawn",
+        "Spawned: " .. instance.Name
+    )
+end
+
+local function WatchMobFolder(folder)
+    if not folder then
+        return
+    end
+
+    if MobConnections[folder] then
+        MobConnections[folder]:Disconnect()
+    end
+
+    MobConnections[folder] = folder.ChildAdded:Connect(function(child)
+        task.wait()
+
+        if IsMobFolderSelected(folder.Name) then
+            NotifyMobSpawn(child)
+        end
+    end)
+end
+
+if WorldMobs then
+    for _, folder in ipairs(WorldMobs:GetChildren()) do
+        WatchMobFolder(folder)
+    end
+
+    WorldMobs.ChildAdded:Connect(function(folder)
+        WatchMobFolder(folder)
+
+        task.wait()
+
+        if IsMobFolderSelected(folder.Name) then
+            NotifyMobSpawn(folder)
+        end
+    end)
+end
+
+--==========================================================
+-- PLAYER HEALTH / ENERGY NOTIFIER
+--==========================================================
+
+local HealthConnections = {}
+local EnergyConnections = {}
+
+local function SetupCharacter(character)
+    if not character then
+        return
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+        or character:WaitForChild("Humanoid", 5)
+
+    if humanoid then
+        if HealthConnections[humanoid] then
+            HealthConnections[humanoid]:Disconnect()
+        end
+
+        local lastHealth = humanoid.Health
+        local lastDamageTime = 0
+
+        HealthConnections[humanoid] =
+            humanoid.HealthChanged:Connect(function(newHealth)
+
+                if Toggles.NotifyCritDamage.Value then
+                    local maxHealth = humanoid.MaxHealth
+
+                    if maxHealth > 0 then
+                        local damage = lastHealth - newHealth
+                        local percent = damage / maxHealth
+
+                        if damage > 0
+                            and percent >= HEALTH_DAMAGE_PERCENT
+                            and (tick() - lastDamageTime) <= HEALTH_DAMAGE_WINDOW then
+
+                            Notify(
+                                "Crit Dame",
+                                string.format(
+                                    "-%.0f HP (%.1f%%)",
+                                    damage,
+                                    percent * 100
+                                )
+                            )
+                        end
+
+                        if damage > 0 then
+                            lastDamageTime = tick()
+                        end
+                    end
+                end
+
+                lastHealth = newHealth
+            end)
+    end
+
+    local status =
+        Workspace:FindFirstChild("Characters")
+        and Workspace.Characters:FindFirstChild(LocalPlayer.Name)
+        and Workspace.Characters[LocalPlayer.Name]:FindFirstChild("Status")
+
+    if status then
+        local currentEnergy = status:FindFirstChild("CurrentEnergy")
+        local maxEnergy = status:FindFirstChild("MaxEnergy")
+
+        if currentEnergy and maxEnergy then
+
+            if EnergyConnections[currentEnergy] then
+                EnergyConnections[currentEnergy]:Disconnect()
+            end
+
+            local warned = false
+
+            EnergyConnections[currentEnergy] =
+                currentEnergy:GetPropertyChangedSignal("Value"):Connect(function()
+
+                    if not Toggles.NotifyEnergy.Value then
+                        warned = false
+                        return
+                    end
+
+                    local max = tonumber(maxEnergy.Value) or 0
+                    local current = tonumber(currentEnergy.Value) or 0
+
+                    if max > 0 then
+                        local percent = current / max
+
+                        if percent <= ENERGY_PERCENT then
+                            if not warned then
+                                warned = true
+
+                                Notify(
+                                    "Energy",
+                                    string.format(
+                                        "Energy thấp: %.1f%%",
+                                        percent * 100
+                                    )
+                                )
+                            end
+                        else
+                            warned = false
+                        end
+                    end
+                end)
+        end
+    end
+end
+
+if LocalPlayer.Character then
+    task.spawn(function()
+        SetupCharacter(LocalPlayer.Character)
+    end)
+end
+
+LocalPlayer.CharacterAdded:Connect(function(character)
+    task.wait(1)
+    SetupCharacter(character)
+end)
+
+--==========================================================
+-- HASTE TIME
+--==========================================================
+
+local ScriptStartTime = tick()
+
+task.spawn(function()
+    while task.wait(1) do
+        if Toggles.NotifyHasteTime.Value then
+            local elapsed = math.floor(tick() - ScriptStartTime)
+
+            local hours = math.floor(elapsed / 3600)
+            local minutes = math.floor((elapsed % 3600) / 60)
+            local seconds = elapsed % 60
+
+            Notify(
+                "Haste Time",
+                string.format(
+                    "Script đã chạy: %02d:%02d:%02d",
+                    hours,
+                    minutes,
+                    seconds
+                )
+            )
+
+            -- Chỉ notify mỗi 60 giây
+            task.wait(59)
+        end
+    end
+end)
+
+--==========================================================
+-- ESP SETTINGS BOX
+--==========================================================
+
+local ESPSettingsBox = Tab2:AddRightGroupbox("ESP", "eye")
+
+local ESPMobsToggle
+local ESPPlayersToggle
+local ESPItemsToggle
+local ESPOrbToggle
+local ESPQuestToggle
+
+--==========================================================
+-- ESP OBJECT STORAGE
+--==========================================================
+
+local ESPObjects = {}
+
+local function DestroyESP(instance)
+    local data = ESPObjects[instance]
+
+    if not data then
+        return
+    end
+
+    if data.Highlight then
+        data.Highlight:Destroy()
+    end
+
+    if data.Billboard then
+        data.Billboard:Destroy()
+    end
+
+    ESPObjects[instance] = nil
+end
+
+local function GetESPColor(kind)
+    if ESPSettings.Rainbow then
+        return GetRainbowColor()
+    end
+
+    if kind == "Mobs" then
+        return ESPSettings.MobColor
+    elseif kind == "Players" then
+        return ESPSettings.PlayerColor
+    elseif kind == "Items" then
+        return ESPSettings.ItemColor
+    elseif kind == "Orb" then
+        return ESPSettings.OrbColor
+    elseif kind == "Quest" then
+        return ESPSettings.QuestColor
+    end
+
+    return Color3.new(1, 1, 1)
+end
+
+local function CreateESP(instance, kind)
+    if not instance or not instance.Parent then
+        return
+    end
+
+    if ESPObjects[instance] then
+        return
+    end
+
+    local root = GetRoot(instance)
+
+    if not root then
+        return
+    end
+
+    local color = GetESPColor(kind)
+
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "AbyssallESP"
+    highlight.Adornee = instance:IsA("Model") and instance or root
+    highlight.FillColor = color
+    highlight.OutlineColor = color
+    highlight.FillTransparency = ESPSettings.FillTransparency
+    highlight.OutlineTransparency = ESPSettings.OutlineTransparency
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Parent = root
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "AbyssallESPText"
+    billboard.Adornee = root
+    billboard.AlwaysOnTop = true
+    billboard.Size = UDim2.fromOffset(300, 60)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.MaxDistance = 10000
+    billboard.Parent = root
+
+    local label = Instance.new("TextLabel")
+    label.Name = "Text"
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.fromScale(1, 1)
+    label.Font = ESPSettings.Font
+    label.TextSize = ESPSettings.TextSize
+    label.TextColor3 = color
+    label.TextStrokeColor3 = Color3.new(0, 0, 0)
+    label.TextTransparency = ESPSettings.TextTransparency
+    label.TextStrokeTransparency = ESPSettings.TextOutlineTransparency
+    label.Text = instance.Name
+    label.Parent = billboard
+
+    ESPObjects[instance] = {
+        Highlight = highlight,
+        Billboard = billboard,
+        Label = label,
+        Kind = kind,
+    }
+end
+
+--==========================================================
+-- ESP SCANNERS
+--==========================================================
+
+local function AddFolderESP(folder, kind)
+    if not folder then
+        return
+    end
+
+    for _, child in ipairs(folder:GetChildren()) do
+        CreateESP(child, kind)
+    end
+end
+
+local function RemoveInvalidESP()
+    for instance in pairs(ESPObjects) do
+        if not instance
+            or not instance.Parent
+            or not GetRoot(instance) then
+
+            DestroyESP(instance)
+        end
+    end
+end
+
+--==========================================================
+-- ESP TOGGLES
+--==========================================================
+
+ESPMobsToggle = ESPSettingsBox:AddToggle("ESPMobs", {
+    Text = "Mobs",
+    Default = false,
+})
+
+ESPPlayersToggle = ESPSettingsBox:AddToggle("ESPPlayers", {
+    Text = "Players",
+    Default = false,
+})
+
+ESPItemsToggle = ESPSettingsBox:AddToggle("ESPItems", {
+    Text = "Items",
+    Default = false,
+})
+
+ESPOrbToggle = ESPSettingsBox:AddToggle("ESPStardustOrb", {
+    Text = "Stardust Orb",
+    Default = false,
+})
+
+ESPQuestToggle = ESPSettingsBox:AddToggle("ESPQuestNPC", {
+    Text = "Quest NPC",
+    Default = false,
+})
+
+--==========================================================
+-- ESP COLORS
+--==========================================================
+
+ESPMobsToggle:AddColorPicker("MobsESPColor", {
+    Default = ESPSettings.MobColor,
+    Title = "Mobs Color",
+
+    Callback = function(Value)
+        ESPSettings.MobColor = Value
+    end,
+})
+
+ESPPlayersToggle:AddColorPicker("PlayersESPColor", {
+    Default = ESPSettings.PlayerColor,
+    Title = "Players Color",
+
+    Callback = function(Value)
+        ESPSettings.PlayerColor = Value
+    end,
+})
+
+ESPItemsToggle:AddColorPicker("ItemsESPColor", {
+    Default = ESPSettings.ItemColor,
+    Title = "Items Color",
+
+    Callback = function(Value)
+        ESPSettings.ItemColor = Value
+    end,
+})
+
+ESPOrbToggle:AddColorPicker("OrbESPColor", {
+    Default = ESPSettings.OrbColor,
+    Title = "Orb Color",
+
+    Callback = function(Value)
+        ESPSettings.OrbColor = Value
+    end,
+})
+
+ESPQuestToggle:AddColorPicker("QuestESPColor", {
+    Default = ESPSettings.QuestColor,
+    Title = "Quest Color",
+
+    Callback = function(Value)
+        ESPSettings.QuestColor = Value
+    end,
+})
+
+--==========================================================
+-- ESP SETTINGS
+--==========================================================
+
+ESPSettingsBox:AddToggle("RainbowESP", {
+    Text = "Rainbow Effect",
+    Default = false,
+
+    Callback = function(Value)
+        ESPSettings.Rainbow = Value
+    end,
+})
+
+ESPSettingsBox:AddToggle("ShowDistance", {
+    Text = "Show Distance",
+    Default = true,
+
+    Callback = function(Value)
+        ESPSettings.ShowDistance = Value
+    end,
+})
+
+ESPSettingsBox:AddSlider("FillTransparency", {
+    Text = "Fill Transparency",
+    Default = 0.75,
+    Min = 0,
+    Max = 1,
+    Rounding = 2,
+
+    Callback = function(Value)
+        ESPSettings.FillTransparency = Value
+    end,
+})
+
+ESPSettingsBox:AddSlider("OutlineTransparency", {
+    Text = "Outline Transparency",
+    Default = 0,
+    Min = 0,
+    Max = 1,
+    Rounding = 2,
+
+    Callback = function(Value)
+        ESPSettings.OutlineTransparency = Value
+    end,
+})
+
+ESPSettingsBox:AddSlider("TextTransparency", {
+    Text = "Text Transparency",
+    Default = 0,
+    Min = 0,
+    Max = 1,
+    Rounding = 2,
+
+    Callback = function(Value)
+        ESPSettings.TextTransparency = Value
+    end,
+})
+
+ESPSettingsBox:AddSlider("TextOutlineTransparency", {
+    Text = "Text Outline Transparency",
+    Default = 0,
+    Min = 0,
+    Max = 1,
+    Rounding = 2,
+
+    Callback = function(Value)
+        ESPSettings.TextOutlineTransparency = Value
+    end,
+})
+
+ESPSettingsBox:AddSlider("FadeTime", {
+    Text = "Fade Time",
+    Default = 0.25,
+    Min = 0,
+    Max = 2,
+    Rounding = 2,
+
+    Callback = function(Value)
+        ESPSettings.FadeTime = Value
+    end,
+})
+
+ESPSettingsBox:AddSlider("RenderLimit", {
+    Text = "Render Limit",
+    Default = 240,
+    Min = 10,
+    Max = 500,
+    Rounding = 0,
+
+    Callback = function(Value)
+        ESPSettings.RenderLimit = Value
+    end,
+})
+
+ESPSettingsBox:AddSlider("TextSize", {
+    Text = "Text Size",
+    Default = 20,
+    Min = 8,
+    Max = 32,
+    Rounding = 0,
+
+    Callback = function(Value)
+        ESPSettings.TextSize = Value
+    end,
+})
+
+ESPSettingsBox:AddDropdown("TextFont", {
+    Values = {
+        "Highway",
+        "Gotham",
+        "SourceSans",
+        "Arial"
+    },
+
+    Default = "Highway",
+    Text = "Text Font",
+
+    Callback = function(Value)
+        local fonts = {
+            Highway = Enum.Font.Highway,
+            Gotham = Enum.Font.Gotham,
+            SourceSans = Enum.Font.SourceSans,
+            Arial = Enum.Font.Arial,
+        }
+
+        ESPSettings.Font = fonts[Value] or Enum.Font.Highway
+    end,
+})
+
+--==========================================================
+-- ESP UPDATE
+--==========================================================
+
+local function ScanESP()
+    -- MOBS
+    if Toggles.ESPMobs.Value then
+        local EventMobs =
+            WorldMobs
+            and WorldMobs:FindFirstChild("Event Mobs")
+
+        if EventMobs then
+            AddFolderESP(EventMobs, "Mobs")
+        end
+    end
+
+    -- PLAYERS
+    if Toggles.ESPPlayers.Value then
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                CreateESP(player.Character, "Players")
+            end
+        end
+    end
+
+    -- ITEMS
+    if Toggles.ESPItems.Value then
+        local PickItem = Workspace:FindFirstChild("PickItem")
+
+        if PickItem then
+            AddFolderESP(PickItem, "Items")
+        end
+    end
+
+    -- STARDUST ORB
+    if Toggles.ESPStardustOrb.Value then
+        local OrbFolder =
+            Workspace
+            :FindFirstChild("Misc")
+            and Workspace.Misc:FindFirstChild("DragonSphereSpawns")
+
+        if OrbFolder then
+            AddFolderESP(OrbFolder, "Orb")
+        end
+    end
+
+    -- QUEST NPC
+    if Toggles.ESPQuestNPC.Value then
+        local QuestFolder =
+            Workspace
+            :FindFirstChild("Misc")
+            and Workspace.Misc:FindFirstChild("NPC")
+            and Workspace.Misc.NPC:FindFirstChild("Quests")
+
+        if QuestFolder then
+            AddFolderESP(QuestFolder, "Quest")
+        end
+    end
+
+    -- UPDATE EXISTING
+    local candidates = {}
+
+    for instance, data in pairs(ESPObjects) do
+        if instance.Parent then
+            table.insert(candidates, {
+                Instance = instance,
+                Data = data,
+                Distance = GetDistance(instance),
+            })
+        end
+    end
+
+    table.sort(candidates, function(a, b)
+        return a.Distance < b.Distance
+    end)
+
+    for index, entry in ipairs(candidates) do
+        local data = entry.Data
+        local enabled = index <= ESPSettings.RenderLimit
+
+        if data.Highlight then
+            data.Highlight.Enabled = enabled
+
+            local color = GetESPColor(data.Kind)
+
+            data.Highlight.FillColor = color
+            data.Highlight.OutlineColor = color
+            data.Highlight.FillTransparency =
+                ESPSettings.FillTransparency
+            data.Highlight.OutlineTransparency =
+                ESPSettings.OutlineTransparency
+        end
+
+        if data.Label then
+            data.Label.Visible = enabled
+
+            local color = GetESPColor(data.Kind)
+
+            data.Label.TextColor3 = color
+            data.Label.TextSize = ESPSettings.TextSize
+            data.Label.Font = ESPSettings.Font
+            data.Label.TextTransparency =
+                ESPSettings.TextTransparency
+            data.Label.TextStrokeTransparency =
+                ESPSettings.TextOutlineTransparency
+
+            if ESPSettings.ShowDistance then
+                data.Label.Text =
+                    string.format(
+                        "%s\n[%d]",
+                        entry.Instance.Name,
+                        math.floor(entry.Distance)
+                    )
+            else
+                data.Label.Text = entry.Instance.Name
+            end
+        end
+    end
+
+    RemoveInvalidESP()
+end
+
+--==========================================================
+-- AUTO CLEAN / RESCAN
+--==========================================================
+
+task.spawn(function()
+    while task.wait(ESP_UPDATE_RATE) do
+        if Library.Unloaded then
+            break
+        end
+
+        pcall(ScanESP)
+    end
+end)
+
+--==========================================================
+-- REFRESH ITEM DROPDOWN
+--==========================================================
+
+task.spawn(function()
+    while task.wait(2) do
+        if Library.Unloaded then
+            break
+        end
+
+        pcall(function()
+            local values = GetItemNames()
+
+            if Options.ItemList then
+                Options.ItemList:SetValues(values)
+            end
+        end)
+    end
+end)
+
+--==========================================================
+-- CLEANUP WHEN ESP IS TURNED OFF
+--==========================================================
+
+local function CleanupKind(kind)
+    for instance, data in pairs(ESPObjects) do
+        if data.Kind == kind then
+            DestroyESP(instance)
+        end
+    end
+end
+
+ESPMobsToggle:OnChanged(function(Value)
+    if not Value then
+        CleanupKind("Mobs")
+    end
+end)
+
+ESPPlayersToggle:OnChanged(function(Value)
+    if not Value then
+        CleanupKind("Players")
+    end
+end)
+
+ESPItemsToggle:OnChanged(function(Value)
+    if not Value then
+        CleanupKind("Items")
+    end
+end)
+
+ESPOrbToggle:OnChanged(function(Value)
+    if not Value then
+        CleanupKind("Orb")
+    end
+end)
+
+ESPQuestToggle:OnChanged(function(Value)
+    if not Value then
+        CleanupKind("Quest")
+    end
+end)
+
+--==========================================================
+-- LIVE CHARACTER ESP REFRESH
+--==========================================================
+
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        task.wait(0.5)
+
+        if Toggles.ESPPlayers.Value then
+            CreateESP(player.Character, "Players")
+        end
+    end)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    if player.Character then
+        DestroyESP(player.Character)
+    end
+end)
+
+--==========================================================
+-- AUTO WATCH NEW OBJECTS
+--==========================================================
+
+local function ConnectFolder(folder, kind)
+    if not folder then
+        return
+    end
+
+    folder.ChildAdded:Connect(function(child)
+        task.wait()
+
+        if kind == "Mobs" and Toggles.ESPMobs.Value then
+            CreateESP(child, "Mobs")
+
+        elseif kind == "Items" and Toggles.ESPItems.Value then
+            CreateESP(child, "Items")
+
+        elseif kind == "Orb" and Toggles.ESPStardustOrb.Value then
+            CreateESP(child, "Orb")
+
+        elseif kind == "Quest" and Toggles.ESPQuestNPC.Value then
+            CreateESP(child, "Quest")
+        end
+    end)
+end
+
+ConnectFolder(
+    WorldMobs and WorldMobs:FindFirstChild("Event Mobs"),
+    "Mobs"
+)
+
+ConnectFolder(
+    Workspace:FindFirstChild("PickItem"),
+    "Items"
+)
+
+ConnectFolder(
+    Workspace:FindFirstChild("Misc")
+        and Workspace.Misc:FindFirstChild("DragonSphereSpawns"),
+    "Orb"
+)
+
+ConnectFolder(
+    Workspace:FindFirstChild("Misc")
+        and Workspace.Misc:FindFirstChild("NPC")
+        and Workspace.Misc.NPC:FindFirstChild("Quests"),
+    "Quest"
+)
+
+print("[Abyssall] Visuals Tab 2 loaded.")
