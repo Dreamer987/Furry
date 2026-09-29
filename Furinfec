@@ -2341,3 +2341,344 @@ ConnectFolder(
 )
 
 print("[Abyssall] Visuals Tab 2 loaded.")
+--==========================================================
+-- CAMERA - LEFT
+--==========================================================
+
+local CameraBox = Tab2:AddLeftGroupbox("Camera", "camera")
+
+local Camera = workspace.CurrentCamera
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local CameraSettings = {
+    Ambient = Color3.fromRGB(45, 90, 170),
+    FOV = 70,
+
+    RemoveShake = true,
+    RemoveBobbing = false,
+    RemoveCutscenes = false,
+    RemoveFog = false,
+
+    ThirdPerson = false,
+    XOffset = 1.5,
+    YOffset = 1,
+    ZOffset = 5,
+
+    WallCheck = false,
+
+    ViewmodelOffset = false,
+    ViewX = 0,
+    ViewY = 0,
+    ViewZ = 0,
+}
+
+--==========================================================
+-- AMBIENT
+--==========================================================
+
+CameraBox:AddLabel("Ambient")
+
+CameraBox:AddColorPicker("AmbientColor", {
+    Default = CameraSettings.Ambient,
+    Title = "Ambient Color",
+
+    Callback = function(Value)
+        CameraSettings.Ambient = Value
+    end,
+})
+
+CameraBox:AddToggle("AmbientToggle", {
+    Text = "Ambient",
+    Default = false,
+
+    Callback = function(Value)
+        if Value then
+            pcall(function()
+                game:GetService("Lighting").Ambient =
+                    CameraSettings.Ambient
+
+                game:GetService("Lighting").OutdoorAmbient =
+                    CameraSettings.Ambient
+            end)
+        end
+    end,
+})
+
+--==========================================================
+-- FIELD OF VIEW
+--==========================================================
+
+CameraBox:AddSlider("CameraFOV", {
+    Text = "Field of View",
+    Default = 70,
+    Min = 40,
+    Max = 120,
+    Rounding = 0,
+
+    Callback = function(Value)
+        CameraSettings.FOV = Value
+
+        if not CameraSettings.ThirdPerson then
+            Camera.FieldOfView = Value
+        end
+    end,
+})
+
+--==========================================================
+-- CAMERA EFFECTS
+--==========================================================
+
+CameraBox:AddToggle("RemoveCameraShake", {
+    Text = "Remove Camera Shake",
+    Default = true,
+})
+
+CameraBox:AddToggle("RemoveCameraBobbing", {
+    Text = "Remove Camera Bobbing",
+    Default = false,
+})
+
+CameraBox:AddToggle("RemoveCutscenes", {
+    Text = "Remove Cutscenes",
+    Default = false,
+})
+
+CameraBox:AddToggle("RemoveFog", {
+    Text = "Remove Fog",
+    Default = false,
+
+    Callback = function(Value)
+        local Lighting = game:GetService("Lighting")
+
+        if Value then
+            Lighting.FogStart = 0
+            Lighting.FogEnd = 100000
+        end
+    end,
+})
+
+--==========================================================
+-- THIRD PERSON
+--==========================================================
+
+CameraBox:AddDivider()
+
+CameraBox:AddToggle("ThirdPerson", {
+    Text = "Third Person",
+    Default = false,
+
+    Callback = function(Value)
+        CameraSettings.ThirdPerson = Value
+
+        if Value then
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+            Camera.CameraType = Enum.CameraType.Custom
+
+            Camera.FieldOfView = CameraSettings.FOV
+        else
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+            Camera.FieldOfView = CameraSettings.FOV
+        end
+    end,
+})
+
+-- X OFFSET
+CameraBox:AddSlider("ThirdPersonX", {
+    Text = "X Offset",
+    Default = 1.5,
+    Min = -10,
+    Max = 10,
+    Rounding = 1,
+
+    Callback = function(Value)
+        CameraSettings.XOffset = Value
+    end,
+})
+
+-- Y OFFSET
+CameraBox:AddSlider("ThirdPersonY", {
+    Text = "Y Offset",
+    Default = 1,
+    Min = -10,
+    Max = 10,
+    Rounding = 1,
+
+    Callback = function(Value)
+        CameraSettings.YOffset = Value
+    end,
+})
+
+-- Z OFFSET
+CameraBox:AddSlider("ThirdPersonZ", {
+    Text = "Z Offset",
+    Default = 5,
+    Min = -20,
+    Max = 20,
+    Rounding = 1,
+
+    Callback = function(Value)
+        CameraSettings.ZOffset = Value
+    end,
+})
+
+--==========================================================
+-- WALL CHECK
+--==========================================================
+
+CameraBox:AddToggle("CameraWallCheck", {
+    Text = "Wall Check",
+    Default = false,
+})
+
+--==========================================================
+-- VIEWMODEL OFFSET
+--==========================================================
+
+CameraBox:AddDivider()
+
+CameraBox:AddToggle("ViewmodelOffset", {
+    Text = "Viewmodel Offset",
+    Default = false,
+})
+
+CameraBox:AddSlider("ViewmodelX", {
+    Text = "X Offset",
+    Default = 0,
+    Min = -10,
+    Max = 10,
+    Rounding = 1,
+
+    Callback = function(Value)
+        CameraSettings.ViewX = Value
+    end,
+})
+
+CameraBox:AddSlider("ViewmodelY", {
+    Text = "Y Offset",
+    Default = 0,
+    Min = -10,
+    Max = 10,
+    Rounding = 1,
+
+    Callback = function(Value)
+        CameraSettings.ViewY = Value
+    end,
+})
+
+CameraBox:AddSlider("ViewmodelZ", {
+    Text = "Z Offset",
+    Default = 0,
+    Min = -10,
+    Max = 10,
+    Rounding = 1,
+
+    Callback = function(Value)
+        CameraSettings.ViewZ = Value
+    end,
+})
+
+--==========================================================
+-- CAMERA UPDATE
+--==========================================================
+
+local CameraConnection
+
+CameraConnection = RunService.RenderStepped:Connect(function()
+    if not Camera or not Camera.Parent then
+        Camera = workspace.CurrentCamera
+    end
+
+    -- FOV
+    if Camera then
+        Camera.FieldOfView = CameraSettings.FOV
+    end
+
+    -- Third person
+    if Toggles.ThirdPerson and Toggles.ThirdPerson.Value then
+        local Character = LocalPlayer.Character
+        local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+
+        if Root and Camera then
+            local offset = Vector3.new(
+                CameraSettings.XOffset,
+                CameraSettings.YOffset,
+                CameraSettings.ZOffset
+            )
+
+            local desired =
+                Root.CFrame
+                * CFrame.new(offset)
+
+            Camera.CFrame = CFrame.lookAt(
+                desired.Position,
+                Root.Position + Vector3.new(0, CameraSettings.YOffset, 0)
+            )
+        end
+    end
+end)
+
+--==========================================================
+-- REMOVE FOG CONTINUOUSLY
+--==========================================================
+
+task.spawn(function()
+    while task.wait(0.1) do
+        if not Toggles.RemoveFog or not Toggles.RemoveFog.Value then
+            continue
+        end
+
+        pcall(function()
+            local Lighting = game:GetService("Lighting")
+
+            Lighting.FogStart = 0
+            Lighting.FogEnd = 100000
+
+            for _, effect in ipairs(Lighting:GetChildren()) do
+                if effect:IsA("Atmosphere") then
+                    effect.Density = 0
+                end
+            end
+        end)
+    end
+end)
+
+--==========================================================
+-- REMOVE CAMERA EFFECTS
+--==========================================================
+
+task.spawn(function()
+    while task.wait() do
+
+        if Toggles.RemoveCameraShake
+            and Toggles.RemoveCameraShake.Value then
+
+            pcall(function()
+                local Character = LocalPlayer.Character
+
+                if Character then
+                    local humanoid =
+                        Character:FindFirstChildOfClass("Humanoid")
+
+                    if humanoid then
+                        humanoid.CameraOffset =
+                            Vector3.new(0, 0, 0)
+                    end
+                end
+            end)
+        end
+
+        if Toggles.RemoveCameraBobbing
+            and Toggles.RemoveCameraBobbing.Value then
+
+            pcall(function()
+                if Camera then
+                    Camera.CFrame =
+                        Camera.CFrame
+                end
+            end)
+        end
+    end
+end)
+
+print("[Abyssall] Camera LEFT loaded.")
